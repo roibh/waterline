@@ -1,6 +1,7 @@
 /**
  * Module dependencies
  */
+import {IQuery} from '../interfaces/query';
 
 var assert = require('assert');
 var _ = require('@sailshq/lodash');
@@ -16,18 +17,20 @@ var verifyModelMethodContext = require('../utils/query/verify-model-method-conte
  * Module constants
  */
 
-var DEFERRED_METHODS = getQueryModifierMethods('replaceCollection');
+var DEFERRED_METHODS = getQueryModifierMethods('removeFromCollection');
 
 
 
 /**
- * replaceCollection()
+ * removeFromCollection()
  *
- * Replace all members of the specified collection in each of the target record(s).
+ * Remove a subset of the members from the specified collection in each of the target record(s).
  *
  * ```
- * // For users 3 and 4, change their "pets" collection to contain ONLY pets 99 and 98.
- * User.replaceCollection([3,4], 'pets', [99,98]).exec(...);
+ * // For users 3 and 4, remove pets 99 and 98 from their "pets" collection.
+ * // > (if either user record does not actually have one of those pets in its "pets",
+ * // > then we just silently skip over it)
+ * User.removeFromCollection([3,4], 'pets', [99,98]).exec(...);
  * ```
  *
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -65,9 +68,9 @@ var DEFERRED_METHODS = getQueryModifierMethods('replaceCollection');
  *     The name of the collection association (e.g. "pets")
  *
  * @qkey {Array} associatedIds
- *     The primary key values (i.e. ids) for the child records that will be the new members of the association.
+ *     The primary key values (i.e. ids) for the associated child records to remove from the collection.
  *     Must be an array of numbers or strings; e.g. ['334724948aca33ea0f13', '913303583e0af031358bac931'] or [18, 19]
- *     Specify an empty array (`[]`) to completely wipe out the collection's contents.
+ *     If an empty array (`[]`) is specified, then this is a no-op.
  *
  * @qkey {Dictionary?} meta
  * @qkey {String} using
@@ -75,16 +78,18 @@ var DEFERRED_METHODS = getQueryModifierMethods('replaceCollection');
  *
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  */
+export class MethodRemoveFromCollection
+{
 
-module.exports = function replaceCollection(/* targetRecordIds?, collectionAttrName?, associatedIds?, explicitCbMaybe?, meta? */) {
-
-  // Verify `this` refers to an actual Sails/Waterline model.
-  verifyModelMethodContext(this);
+    public static execute(obj, targetRecordIds?, collectionAttrName?, associatedIds?, explicitCbMaybe?, meta?)
+    {
+ // Verify `this` refers to an actual Sails/Waterline model.
+  verifyModelMethodContext(obj);
 
   // Set up a few, common local vars for convenience / familiarity.
-  var WLModel = this;
-  var orm = this.waterline;
-  var modelIdentity = this.identity;
+  var WLModel = obj;
+  var orm = obj.waterline;
+  var modelIdentity = obj.identity;
 
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   // FUTURE: Potentially build an omen here for potential use in an
@@ -98,10 +103,11 @@ module.exports = function replaceCollection(/* targetRecordIds?, collectionAttrN
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   // Build query w/ initial, universal keys.
-  var query = {
-    method: 'replaceCollection',
+  var query:IQuery = {
+    method: 'removeFromCollection',
     using: modelIdentity
   };
+
 
 
   //  ██╗   ██╗ █████╗ ██████╗ ██╗ █████╗ ██████╗ ██╗ ██████╗███████╗
@@ -132,21 +138,21 @@ module.exports = function replaceCollection(/* targetRecordIds?, collectionAttrN
     // Handle first two arguments:
     // (both of which always have exactly one meaning)
     //
-    // • replaceCollection(targetRecordIds, collectionAttrName, ...)
+    // • removeFromCollection(targetRecordIds, collectionAttrName, ...)
     query.targetRecordIds = args[0];
     query.collectionAttrName = args[1];
 
 
     // Handle double meaning of third argument, & then handle the rest:
     //
-    // • replaceCollection(____, ____, associatedIds, explicitCbMaybe, _meta)
+    // • removeFromCollection(____, ____, associatedIds, explicitCbMaybe, _meta)
     var is3rdArgArray = !_.isUndefined(args[2]);
     if (is3rdArgArray) {
       query.associatedIds = args[2];
       explicitCbMaybe = args[3];
       _meta = args[4];
     }
-    // • replaceCollection(____, ____, explicitCbMaybe, _meta)
+    // • removeFromCollection(____, ____, explicitCbMaybe, _meta)
     else {
       explicitCbMaybe = args[2];
       _meta = args[3];
@@ -158,7 +164,6 @@ module.exports = function replaceCollection(/* targetRecordIds?, collectionAttrN
     } // >-
 
   })();
-
 
   //  ██████╗ ███████╗███████╗███████╗██████╗
   //  ██╔══██╗██╔════╝██╔════╝██╔════╝██╔══██╗
@@ -212,7 +217,7 @@ module.exports = function replaceCollection(/* targetRecordIds?, collectionAttrN
               flaverr(
                 { name: 'UsageError' },
                 new Error(
-                  'The target record ids (i.e. first argument) passed to `.replaceCollection()` '+
+                  'The target record ids (i.e. first argument) passed to `.removeFromCollection()` '+
                   'should be the ID (or IDs) of target records whose collection will be modified.\n'+
                   'Details:\n'+
                   '  ' + e.details + '\n'
@@ -225,7 +230,7 @@ module.exports = function replaceCollection(/* targetRecordIds?, collectionAttrN
               flaverr(
                 { name: 'UsageError' },
                 new Error(
-                  'The collection attr name (i.e. second argument) to `.replaceCollection()` should '+
+                  'The collection attr name (i.e. second argument) to `.removeFromCollection()` should '+
                   'be the name of a collection association from this model.\n'+
                   'Details:\n'+
                   '  ' + e.details + '\n'
@@ -238,8 +243,8 @@ module.exports = function replaceCollection(/* targetRecordIds?, collectionAttrN
               flaverr(
                 { name: 'UsageError' },
                 new Error(
-                  'The associated ids (i.e. using `.members()`, or the third argument) passed to `.replaceCollection()` should be '+
-                  'the ID (or IDs) of associated records to use.\n'+
+                  'The associated ids (i.e. using `.members()`, or the third argument) passed to `.removeFromCollection()` should be '+
+                  'the ID (or IDs) of associated records to remove.\n'+
                   'Details:\n'+
                   '  ' + e.details + '\n'
                 )
@@ -248,7 +253,7 @@ module.exports = function replaceCollection(/* targetRecordIds?, collectionAttrN
 
           case 'E_NOOP':
             return done();
-            // ^ tolerate no-ops -- i.e. empty array of target record ids
+            // ^ tolerate no-ops -- i.e. empty array of target record ids or empty array of associated ids (members)
 
           case 'E_INVALID_META':
             return done(e);
@@ -265,7 +270,7 @@ module.exports = function replaceCollection(/* targetRecordIds?, collectionAttrN
       //  ┌┐┌┌─┐┬ ┬  ╔═╗╔═╗╔╦╗╦ ╦╔═╗╦  ╦ ╦ ╦  ┌┬┐┌─┐┬  ┬┌─  ┌┬┐┌─┐  ┌┬┐┬ ┬┌─┐  ┌┬┐┌┐ ┌─┐
       //  ││││ ││││  ╠═╣║   ║ ║ ║╠═╣║  ║ ╚╦╝   │ ├─┤│  ├┴┐   │ │ │   │ ├─┤├┤    ││├┴┐└─┐
       //  ┘└┘└─┘└┴┘  ╩ ╩╚═╝ ╩ ╚═╝╩ ╩╩═╝╩═╝╩    ┴ ┴ ┴┴─┘┴ ┴   ┴ └─┘   ┴ ┴ ┴└─┘  ─┴┘└─┘└─┘
-      (function (proceed){
+      (function (proceed) {
 
         // Get the model being used as the parent
         var WLModel = orm.collections[query.using];
@@ -302,11 +307,9 @@ module.exports = function replaceCollection(/* targetRecordIds?, collectionAttrN
           manyToMany = true;
         }
 
-
         // Ensure the query skips lifecycle callbacks
         // Build a modified shallow clone of the originally-provided `meta`
         var modifiedMeta = _.extend({}, query.meta || {}, { skipAllLifecycleCallbacks: true });
-
 
 
         //   ██╗███╗   ██╗      ███╗   ███╗██╗
@@ -337,6 +340,7 @@ module.exports = function replaceCollection(/* targetRecordIds?, collectionAttrN
 
           // Find the parent reference
           if (_.has(Object.getPrototypeOf(WLChild), 'junctionTable') && WLChild.junctionTable) {
+
             // Assumes the generated junction table will only ever have two foreign key
             // values. Should be safe for now and any changes would need to be made in
             // Waterline-Schema where a map could be formed anyway.
@@ -350,22 +354,24 @@ module.exports = function replaceCollection(/* targetRecordIds?, collectionAttrN
                 parentReference = key;
               }
             });
+
           }
           // If it's a through table, grab the parent and child reference from the
           // through table mapping that was generated by Waterline-Schema.
           else if (_.has(Object.getPrototypeOf(WLChild), 'throughTable')) {
+
             childReference = WLChild.throughTable[WLModel.identity + '.' + query.collectionAttrName];
             _.each(WLChild.throughTable, function(rhs, key) {
               if (key !== WLModel.identity + '.' + query.collectionAttrName) {
                 parentReference = rhs;
               }
             });
+
           }//>-
-
-
 
           // Find the child reference in a junction table
           if (_.has(Object.getPrototypeOf(WLChild), 'junctionTable') && WLChild.junctionTable) {
+
             // Assumes the generated junction table will only ever have two foreign key
             // values. Should be safe for now and any changes would need to be made in
             // Waterline-Schema where a map could be formed anyway.
@@ -378,65 +384,52 @@ module.exports = function replaceCollection(/* targetRecordIds?, collectionAttrN
               if (_.has(wlsAttrDef, 'columnName') && wlsAttrDef.columnName !== schemaDef.on) {
                 childReference = key;
               }
-            });
-          }
+            });//</_.each()>
+
+          }//>-
 
 
-          //  ╔╗ ╦ ╦╦╦  ╔╦╗  ┌┬┐┌─┐┌─┐┌┬┐┬─┐┌─┐┬ ┬  ┌─┐ ┬ ┬┌─┐┬─┐┬ ┬
-          //  ╠╩╗║ ║║║   ║║   ││├┤ └─┐ │ ├┬┘│ │└┬┘  │─┼┐│ │├┤ ├┬┘└┬┘
-          //  ╚═╝╚═╝╩╩═╝═╩╝  ─┴┘└─┘└─┘ ┴ ┴└─└─┘ ┴   └─┘└└─┘└─┘┴└─ ┴
+          //  ╔╗ ╦ ╦╦╦  ╔╦╗  ┌─┐ ┬ ┬┌─┐┬─┐┬ ┬
+          //  ╠╩╗║ ║║║   ║║  │─┼┐│ │├┤ ├┬┘└┬┘
+          //  ╚═╝╚═╝╩╩═╝═╩╝  └─┘└└─┘└─┘┴└─ ┴ (S)
           //
-          // When replacing a collection, the first step is to remove all the records
-          // for the target id's in the join table.
-          var criteriaOfDestruction = {
-            where: {}
-          };
+          // If only a single targetRecordId is used, this can be proceed in a single
+          // query. Otherwise multiple queries will be needed - one for each parent.
+          // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+          // FUTURE: Combine this bit into one single query using something like:
+          // ```
+          // { or: [ { and: [{..},{..:{in:[..]}}] }, { and: [{..},{..:{in: [..]}}] }, ... ] }
+          // ```
+          // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-          criteriaOfDestruction.where[parentReference] = {
-            in: query.targetRecordIds
-          };
-
-          // Don't worry about fetching
-          modifiedMeta.fetch = false;
-
-          //  ╔╗ ╦ ╦╦╦  ╔╦╗  ┬┌┐┌┌─┐┌─┐┬─┐┌┬┐  ┌─┐ ┬ ┬┌─┐┬─┐┬ ┬
-          //  ╠╩╗║ ║║║   ║║  ││││└─┐├┤ ├┬┘ │   │─┼┐│ │├┤ ├┬┘└┬┘
-          //  ╚═╝╚═╝╩╩═╝═╩╝  ┴┘└┘└─┘└─┘┴└─ ┴   └─┘└└─┘└─┘┴└─ ┴
-          //
-          // Then build up an insert query for creating the new join table records.
-          var insertRecords = [];
-
-          // For each target record, build an insert query for the associated records.
+          // Build an array to hold `where` clauses for all records being removed.
+          // For each target record, build a constraint destroy query for the associated records.
+          var joinRecordWhereClauses = [];
           _.each(query.targetRecordIds, function(targetId) {
-            _.each(query.associatedIds, function(associatedId) {
-              var record = {};
-              record[parentReference] = targetId;
-              record[childReference] = associatedId;
-              insertRecords.push(record);
-            });
+            var whereClauseForTarget = {};
+            whereClauseForTarget[parentReference] = targetId;
+            whereClauseForTarget[childReference] = { in: query.associatedIds };
+            joinRecordWhereClauses.push(whereClauseForTarget);
           });
 
+          //  ╦═╗╦ ╦╔╗╔  ┌─┐ ┬ ┬┌─┐┬─┐┬ ┬
+          //  ╠╦╝║ ║║║║  │─┼┐│ │├┤ ├┬┘└┬┘
+          //  ╩╚═╚═╝╝╚╝  └─┘└└─┘└─┘┴└─ ┴
+          async.each(joinRecordWhereClauses, function(whereClause, next) {
 
-          //  ╦═╗╦ ╦╔╗╔  ┌┬┐┌─┐┌─┐┌┬┐┬─┐┌─┐┬ ┬  ┌─┐ ┬ ┬┌─┐┬─┐┬ ┬
-          //  ╠╦╝║ ║║║║   ││├┤ └─┐ │ ├┬┘│ │└┬┘  │─┼┐│ │├┤ ├┬┘└┬┘
-          //  ╩╚═╚═╝╝╚╝  ─┴┘└─┘└─┘ ┴ ┴└─└─┘ ┴   └─┘└└─┘└─┘┴└─ ┴
-          WLChild.destroy(criteriaOfDestruction, function $afterDestroyingChildRecords(err) {
+            WLChild.destroy(whereClause, function(err){
+              if (err) { return next(err); }
+              return next();
+            }, modifiedMeta);
+
+          },// ~∞%°
+          function _after(err) {
             if (err) { return proceed(err); }
-
-            // If there were no associated id's to insert, exit out
-            if (!query.associatedIds.length) {
-              return proceed();
-            }
-
-            //  ╦═╗╦ ╦╔╗╔  ┌─┐┬─┐┌─┐┌─┐┌┬┐┌─┐  ┌─┐ ┬ ┬┌─┐┬─┐┬ ┬
-            //  ╠╦╝║ ║║║║  │  ├┬┘├┤ ├─┤ │ ├┤   │─┼┐│ │├┤ ├┬┘└┬┘
-            //  ╩╚═╚═╝╝╚╝  └─┘┴└─└─┘┴ ┴ ┴ └─┘  └─┘└└─┘└─┘┴└─ ┴
-            WLChild.createEach(insertRecords, proceed, modifiedMeta);
-
-          }, modifiedMeta);
+            return proceed(null);
+          });//</ async.each() >
 
           return;
-        }//-•
+        }//_∏_.  </ if this is a n..m (many to many) association >
 
 
         //   ██╗███╗   ██╗      ██╗██╗
@@ -453,76 +446,33 @@ module.exports = function replaceCollection(/* targetRecordIds?, collectionAttrN
         //  ██████╔╝███████╗███████╗╚██████╔╝██║ ╚████║╚██████╔╝███████║       ██║   ╚██████╔╝
         //  ╚═════╝ ╚══════╝╚══════╝ ╚═════╝ ╚═╝  ╚═══╝ ╚═════╝ ╚══════╝       ╚═╝    ╚═════╝
         //
-        // Otherwise the child records need to be updated to reflect the nulled out
-        // foreign key value and then updated to reflect the new association.
+        // Otherwise, this association is exclusive-- so rather than deleting junction records, we'll need
+        // to update the child records themselves, nulling out their foreign key value (aka singular, "model", association).
 
 
-        //  ╔╗ ╦ ╦╦╦  ╔╦╗  ┌┐┌┬ ┬┬  ┬    ┌─┐┬ ┬┌┬┐  ┌─┐ ┬ ┬┌─┐┬─┐┬ ┬
-        //  ╠╩╗║ ║║║   ║║  ││││ ││  │    │ ││ │ │   │─┼┐│ │├┤ ├┬┘└┬┘
-        //  ╚═╝╚═╝╩╩═╝═╩╝  ┘└┘└─┘┴─┘┴─┘  └─┘└─┘ ┴   └─┘└└─┘└─┘┴└─ ┴
+        //  ╔╗ ╦ ╦╦╦  ╔╦╗  ┌─┐ ┬ ┬┌─┐┬─┐┬ ┬
+        //  ╠╩╗║ ║║║   ║║  │─┼┐│ │├┤ ├┬┘└┬┘
+        //  ╚═╝╚═╝╩╩═╝═╩╝  └─┘└└─┘└─┘┴└─ ┴
+        //
+        // Build up criteria that selects child records.
+        var criteria = { where: {} };
+        criteria.where[WLChild.primaryKey] = query.associatedIds;
+        criteria.where[schemaDef.via] = query.targetRecordIds;
 
-        // Build up a search criteria
-        var nullOutCriteria = {
-          where: {}
-        };
-
-        nullOutCriteria.where[schemaDef.via] = {
-          in: query.targetRecordIds
-        };
-
-        // Build up the values to update
+        // Build up the values to set (we'll null out the other side).
         var valuesToUpdate = {};
         valuesToUpdate[schemaDef.via] = null;
 
 
-        //  ╔╗ ╦ ╦╦╦  ╔╦╗  ┬ ┬┌─┐┌┬┐┌─┐┌┬┐┌─┐  ┌─┐ ┬ ┬┌─┐┬─┐┬ ┬
-        //  ╠╩╗║ ║║║   ║║  │ │├─┘ ││├─┤ │ ├┤   │─┼┐│ │├┤ ├┬┘└┬┘
-        //  ╚═╝╚═╝╩╩═╝═╩╝  └─┘┴  ─┴┘┴ ┴ ┴ └─┘  └─┘└└─┘└─┘┴└─ ┴
-
-        var updateQueries = [];
-
-        // For each target record, build an update query for the associated records.
-        _.each(query.targetRecordIds, function(targetId) {
-          _.each(query.associatedIds, function(associatedId) {
-            // Build up a search criteria
-            var criteria = {
-              where: {}
-            };
-
-            criteria.where[WLChild.primaryKey] = associatedId;
-
-            // Build up the update values
-            var valuesToUpdate = {};
-            valuesToUpdate[schemaDef.via] = targetId;
-
-            updateQueries.push({
-              criteria: criteria,
-              valuesToUpdate: valuesToUpdate
-            });
-          });
-        });
-
-
-        //  ╦═╗╦ ╦╔╗╔  ┌┐┌┬ ┬┬  ┬    ┌─┐┬ ┬┌┬┐  ┌─┐ ┬ ┬┌─┐┬─┐┬ ┬
-        //  ╠╦╝║ ║║║║  ││││ ││  │    │ ││ │ │   │─┼┐│ │├┤ ├┬┘└┬┘
-        //  ╩╚═╚═╝╝╚╝  ┘└┘└─┘┴─┘┴─┘  └─┘└─┘ ┴   └─┘└└─┘└─┘┴└─ ┴
-        WLChild.update(nullOutCriteria, valuesToUpdate, function(err) {
+        //  ╦═╗╦ ╦╔╗╔  ┌─┐ ┬ ┬┌─┐┬─┐┬ ┬
+        //  ╠╦╝║ ║║║║  │─┼┐│ │├┤ ├┬┘└┬┘
+        //  ╩╚═╚═╝╝╚╝  └─┘└└─┘└─┘┴└─ ┴
+        WLChild.update(criteria, valuesToUpdate, function(err){
           if (err) { return proceed(err); }
 
-          //  ╦═╗╦ ╦╔╗╔  ┬ ┬┌─┐┌┬┐┌─┐┌┬┐┌─┐  ┌─┐ ┬ ┬┌─┐┬─┐┬┌─┐┌─┐
-          //  ╠╦╝║ ║║║║  │ │├─┘ ││├─┤ │ ├┤   │─┼┐│ │├┤ ├┬┘│├┤ └─┐
-          //  ╩╚═╚═╝╝╚╝  └─┘┴  ─┴┘┴ ┴ ┴ └─┘  └─┘└└─┘└─┘┴└─┴└─┘└─┘
-          async.each(updateQueries, function(updateQuery, next) {
+          return proceed(null);
 
-            WLChild.update(updateQuery.criteria, updateQuery.valuesToUpdate, next, modifiedMeta);
-
-          },// ~∞%°
-          function (err) {
-            if (err) { return proceed(err); }
-            return proceed();
-          });
-
-        }, modifiedMeta);
+        }, modifiedMeta);//</.update()>
 
       })(function (err) {
         if (err) { return done(err); }
@@ -551,5 +501,6 @@ module.exports = function replaceCollection(/* targetRecordIds?, collectionAttrN
     })
 
   );//</parley>
-
-};
+    }
+}
+ 

@@ -1,7 +1,7 @@
 /**
  * Module dependencies
  */
-
+import {IQuery} from '../interfaces/query';
 var util = require('util');
 var _ = require('@sailshq/lodash');
 var async = require('async');
@@ -47,22 +47,24 @@ var DEFERRED_METHODS = getQueryModifierMethods('createEach');
  *
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  */
+export class MethodCreateEach
+{
+  public static execute(obj, newRecords?, explicitCbMaybe?, meta?){
 
-module.exports = function createEach( /* newRecords?, explicitCbMaybe?, meta? */ ) {
 
   // Verify `this` refers to an actual Sails/Waterline model.
-  verifyModelMethodContext(this);
+  verifyModelMethodContext(obj);
 
   // Set up a few, common local vars for convenience / familiarity.
-  var WLModel = this;
-  var orm = this.waterline;
-  var modelIdentity = this.identity;
+  var WLModel = obj;
+  var orm = obj.waterline;
+  var modelIdentity = obj.identity;
 
   // Build an omen for potential use in the asynchronous callback below.
-  var omen = buildOmen(createEach);
+  var omen = buildOmen(this);
 
   // Build query w/ initial, universal keys.
-  var query = {
+  var query : IQuery= {
     method: 'createEach',
     using: modelIdentity
   };
@@ -409,4 +411,6 @@ module.exports = function createEach( /* newRecords?, explicitCbMaybe?, meta? */
 
   );//</parley>
 
-};
+  }
+}
+  

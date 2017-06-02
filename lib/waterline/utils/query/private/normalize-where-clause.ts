@@ -233,7 +233,7 @@ module.exports = function normalizeWhereClause(whereClause, modelIdentity, orm) 
   try {
 
     // Initially invoke our self-calling, recursive function.
-    (function _recursiveStep(branch, recursionDepth, parent, indexInParent){
+    (function _recursiveStep(branch, recursionDepth, parent, indexInParent,soleBranchKeyParam){
 
       var MAX_RECURSION_DEPTH = 25;
       if (recursionDepth > MAX_RECURSION_DEPTH) {

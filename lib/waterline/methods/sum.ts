@@ -1,7 +1,7 @@
 /**
  * Module dependencies
  */
-
+import {IQuery} from '../interfaces/query';
 var _ = require('@sailshq/lodash');
 var flaverr = require('flaverr');
 var parley = require('parley');
@@ -78,22 +78,23 @@ var DEFERRED_METHODS = getQueryModifierMethods('sum');
  *
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  */
-
-module.exports = function sum( /* numericAttrName?, criteria?, explicitCbMaybe?, meta?, moreQueryKeys? */ ) {
-
-  // Verify `this` refers to an actual Sails/Waterline model.
-  verifyModelMethodContext(this);
+export class MethodSum
+{
+  public static execute(obj, numericAttrName?, criteria?, explicitCbMaybe?, meta?, moreQueryKeys?)
+  {
+ // Verify `this` refers to an actual Sails/Waterline model.
+  verifyModelMethodContext(obj);
 
   // Set up a few, common local vars for convenience / familiarity.
-  var WLModel = this;
-  var orm = this.waterline;
-  var modelIdentity = this.identity;
+  var WLModel = obj;
+  var orm = obj.waterline;
+  var modelIdentity = obj.identity;
 
   // Build an omen for potential use in the asynchronous callback below.
-  var omen = buildOmen(sum);
+  var omen = buildOmen(this);
 
   // Build query w/ initial, universal keys.
-  var query = {
+  var query: IQuery = {
     method: 'sum',
     using: modelIdentity
   };
@@ -268,5 +269,6 @@ module.exports = function sum( /* numericAttrName?, criteria?, explicitCbMaybe?,
     })
 
   );//</parley>
-
-};
+  }
+}
+ 

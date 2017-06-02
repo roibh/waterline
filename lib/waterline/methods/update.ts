@@ -1,6 +1,7 @@
 /**
  * Module dependencies
  */
+import {IQuery} from '../interfaces/query';
 
 var util = require('util');
 var async = require('async');
@@ -20,23 +21,23 @@ var verifyModelMethodContext = require('../utils/query/verify-model-method-conte
  * Module constants
  */
 
-var DEFERRED_METHODS = getQueryModifierMethods('create');
+var DEFERRED_METHODS = getQueryModifierMethods('update');
 
 
 
 /**
- * create()
+ * update()
  *
- * Create a new record using the specified initial values.
+ * Update records that match the specified criteria, patching them with
+ * the provided values.
  *
  * ```
- * // Create a new bank account with a half million dollars,
- * // and associate it with the logged in user.
- * BankAccount.create({
- *   balance: 500000,
- *   owner: req.session.userId
- * })
- * .exec(function(err) {
+ * // Forgive all debts: Zero out bank accounts with less than $0 in them.
+ * BankAccount.update().where({
+ *   balance: { '<': 0 }
+ * }).set({
+ *   balance: 0
+ * }).exec(function(err) {
  *   // ...
  * });
  * ```
@@ -46,7 +47,9 @@ var DEFERRED_METHODS = getQueryModifierMethods('create');
  * Usage without deferred object:
  * ================================================
  *
- * @param {Dictionary?} newRecord
+ * @param {Dictionary} criteria
+ *
+ * @param {Dictionary} valuesToSet
  *
  * @param {Function?} explicitCbMaybe
  *        Callback function to run when query has either finished successfully or errored.
@@ -62,7 +65,8 @@ var DEFERRED_METHODS = getQueryModifierMethods('create');
  * The underlying query keys:
  * ==============================
  *
- * @qkey {Dictionary?} newRecord
+ * @qkey {Dictionary?} criteria
+ * @qkey {Dictionary?} valuesToSet
  *
  * @qkey {Dictionary?} meta
  * @qkey {String} using
@@ -70,27 +74,31 @@ var DEFERRED_METHODS = getQueryModifierMethods('create');
  *
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  */
-
-module.exports = function create(newRecord, explicitCbMaybe, metaContainer) {
+export class MethodDestroy
+{
+public static update(obj, criteria, valuesToSet, explicitCbMaybe, metaContainer) {
 
   // Verify `this` refers to an actual Sails/Waterline model.
-  verifyModelMethodContext(this);
+  verifyModelMethodContext(obj);
 
   // Set up a few, common local vars for convenience / familiarity.
-  var WLModel = this;
-  var orm = this.waterline;
-  var modelIdentity = this.identity;
+  var WLModel = obj;
+  var orm = obj.waterline;
+  var modelIdentity = obj.identity;
+
 
   // Build an omen for potential use in the asynchronous callback below.
-  var omen = buildOmen(create);
+  var omen = buildOmen(this);
 
   // Build initial query.
-  var query = {
-    method: 'create',
+  var query: IQuery =  {
+    method: 'update',
     using: modelIdentity,
-    newRecord: newRecord,
+    criteria: criteria,
+    valuesToSet: valuesToSet,
     meta: metaContainer
   };
+
 
   //  ██╗   ██╗ █████╗ ██████╗ ██╗ █████╗ ██████╗ ██╗ ██████╗███████╗
   //  ██║   ██║██╔══██╗██╔══██╗██║██╔══██╗██╔══██╗██║██╔════╝██╔════╝
@@ -99,8 +107,9 @@ module.exports = function create(newRecord, explicitCbMaybe, metaContainer) {
   //   ╚████╔╝ ██║  ██║██║  ██║██║██║  ██║██████╔╝██║╚██████╗███████║
   //    ╚═══╝  ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝╚═╝  ╚═╝╚═════╝ ╚═╝ ╚═════╝╚══════╝
   //
-  // FUTURE: when time allows, update this to match the "VARIADICS" format
-  // used in the other model methods.
+  // N/A
+  // (there are no out-of-order, optional arguments)
+
 
 
   //  ██████╗ ███████╗███████╗███████╗██████╗
@@ -140,28 +149,54 @@ module.exports = function create(newRecord, explicitCbMaybe, metaContainer) {
       //  ██╔══╝   ██╔██╗ ██╔══╝  ██║     ██║   ██║   ██║   ██╔══╝
       //  ███████╗██╔╝ ██╗███████╗╚██████╗╚██████╔╝   ██║   ███████╗
       //  ╚══════╝╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═════╝    ╚═╝   ╚══════╝
-      //
+
       //  ╔═╗╔═╗╦═╗╔═╗╔═╗  ┌─┐┌┬┐┌─┐┌─┐┌─┐  ┌┬┐┬ ┬┌─┐  ┌─┐ ┬ ┬┌─┐┬─┐┬ ┬
       //  ╠╣ ║ ║╠╦╝║ ╦║╣   └─┐ │ ├─┤│ ┬├┤    │ ││││ │  │─┼┐│ │├┤ ├┬┘└┬┘
       //  ╚  ╚═╝╩╚═╚═╝╚═╝  └─┘ ┴ ┴ ┴└─┘└─┘   ┴ └┴┘└─┘  └─┘└└─┘└─┘┴└─ ┴
       //
       // Forge a stage 2 query (aka logical protostatement)
       // This ensures a normalized format.
+
       try {
         forgeStageTwoQuery(query, orm);
       } catch (e) {
         switch (e.code) {
-          case 'E_INVALID_NEW_RECORD':
+          case 'E_INVALID_CRITERIA':
             return done(
               flaverr(
                 { name: 'UsageError' },
                 new Error(
-                  'Invalid new record(s).\n'+
+                  'Invalid criteria.\n'+
                   'Details:\n'+
                   '  '+e.details+'\n'
                 )
               )
             );
+
+          case 'E_INVALID_VALUES_TO_SET':
+            return done(
+              flaverr(
+                { name: 'UsageError' },
+                new Error(
+                  'Cannot perform update with the provided values.\n'+
+                  'Details:\n'+
+                  '  '+e.details+'\n'
+                )
+              )
+            );
+
+          case 'E_NOOP':
+            // Determine the appropriate no-op result.
+            // If `fetch` meta key is set, use `[]`-- otherwise use `undefined`.
+            //
+            // > Note that future versions might simulate output from the raw driver.
+            // > (e.g. `{ numRecordsUpdated: 0 }`)
+            // >  See: https://github.com/treelinehq/waterline-query-docs/blob/master/docs/results.md#update
+            var noopResult = undefined;
+            if (query.meta && query.meta.fetch) {
+              noopResult = [];
+            }//>-
+            return done(undefined, noopResult);
 
           default:
             return done(e);
@@ -169,32 +204,43 @@ module.exports = function create(newRecord, explicitCbMaybe, metaContainer) {
       }
 
 
-      //  ╔╗ ╔═╗╔═╗╔═╗╦═╗╔═╗  ┌─┐┬─┐┌─┐┌─┐┌┬┐┌─┐  ┬  ┬┌─┐┌─┐┌─┐┬ ┬┌─┐┬  ┌─┐  ┌─┐┌─┐┬  ┬  ┌┐ ┌─┐┌─┐┬┌─
-      //  ╠╩╗║╣ ╠╣ ║ ║╠╦╝║╣   │  ├┬┘├┤ ├─┤ │ ├┤   │  │├┤ ├┤ │  └┬┘│  │  ├┤   │  ├─┤│  │  ├┴┐├─┤│  ├┴┐
-      //  ╚═╝╚═╝╚  ╚═╝╩╚═╚═╝  └─┘┴└─└─┘┴ ┴ ┴ └─┘  ┴─┘┴└  └─┘└─┘ ┴ └─┘┴─┘└─┘  └─┘┴ ┴┴─┘┴─┘└─┘┴ ┴└─┘┴ ┴
-      // Determine what to do about running "before" lifecycle callbacks
-      (function _maybeRunBeforeLC(proceed){
-
-        // If the `skipAllLifecycleCallbacks` meta key was enabled, then don't run this LC.
+      //  ╦ ╦╔═╗╔╗╔╔╦╗╦  ╔═╗         ┬  ┬┌─┐┌─┐┌─┐┬ ┬┌─┐┬  ┌─┐  ┌─┐┌─┐┬  ┬  ┌┐ ┌─┐┌─┐┬┌─
+      //  ╠═╣╠═╣║║║ ║║║  ║╣   BEFORE │  │├┤ ├┤ │  └┬┘│  │  ├┤   │  ├─┤│  │  ├┴┐├─┤│  ├┴┐
+      //  ╩ ╩╩ ╩╝╚╝═╩╝╩═╝╚═╝         ┴─┘┴└  └─┘└─┘ ┴ └─┘┴─┘└─┘  └─┘┴ ┴┴─┘┴─┘└─┘┴ ┴└─┘┴ ┴
+      // Run the "before" lifecycle callback, if appropriate.
+      (function(proceed:any) {
+        // If the `skipAllLifecycleCallbacks` meta flag was set, don't run any of
+        // the methods.
         if (_.has(query.meta, 'skipAllLifecycleCallbacks') && query.meta.skipAllLifecycleCallbacks) {
           return proceed(undefined, query);
-        }//-•
+        }
 
-        // If there is no relevant "before" lifecycle callback, then just proceed.
-        if (!_.has(WLModel._callbacks, 'beforeCreate')) {
+        if (!_.has(WLModel._callbacks, 'beforeUpdate')) {
           return proceed(undefined, query);
-        }//-•
+        }
 
-        // IWMIH, run the "before" lifecycle callback.
-        WLModel._callbacks.beforeCreate(query.newRecord, function(err){
+        WLModel._callbacks.beforeUpdate(query.valuesToSet, function(err){
           if (err) { return proceed(err); }
           return proceed(undefined, query);
         });
 
-      })(function _afterPotentiallyRunningBeforeLC(err, query) {
+      })(function(err, query) {
         if (err) {
           return done(err);
         }
+
+        // ================================================================================
+        // FUTURE: potentially bring this back (but also would need the `omit clause`)
+        // ================================================================================
+        // // Before we get to forging again, save a copy of the stage 2 query's
+        // // `select` clause.  We'll need this later on when processing the resulting
+        // // records, and if we don't copy it now, it might be damaged by the forging.
+        // //
+        // // > Note that we don't need a deep clone.
+        // // > (That's because the `select` clause is only 1 level deep.)
+        // var s2QSelectClause = _.clone(query.criteria.select);
+        // ================================================================================
+
 
         //  ╔═╗╦ ╦╔═╗╔═╗╦╔═  ┌─┐┌─┐┬─┐  ┌─┐┌┐┌┬ ┬
         //  ║  ╠═╣║╣ ║  ╠╩╗  ├┤ │ │├┬┘  ├─┤│││└┬┘
@@ -202,34 +248,35 @@ module.exports = function create(newRecord, explicitCbMaybe, metaContainer) {
         //  ┌─┐┌─┐┬  ┬  ┌─┐┌─┐┌┬┐┬┌─┐┌┐┌  ┬─┐┌─┐┌─┐┌─┐┌┬┐┌─┐
         //  │  │ ││  │  ├┤ │   │ ││ ││││  ├┬┘├┤ └─┐├┤  │ └─┐
         //  └─┘└─┘┴─┘┴─┘└─┘└─┘ ┴ ┴└─┘┘└┘  ┴└─└─┘└─┘└─┘ ┴ └─┘
-        // Also removes them from the newRecord before sending to the adapter.
+        // Also removes them from the valuesToSet before sending to the adapter.
         var collectionResets = {};
         _.each(WLModel.attributes, function _eachKnownAttrDef(attrDef, attrName) {
           if (attrDef.collection) {
-            // Only track a reset if the value isn't an empty array. If the value
-            // is an empty array there isn't any resetting to do.
-            if (query.newRecord[attrName].length > 0) {
-              collectionResets[attrName] = query.newRecord[attrName];
+
+            // Only track a reset if a value was explicitly specified for this collection assoc.
+            // (All we have to do is just check for truthiness, since we've already done FS2Q at this point)
+            if (query.valuesToSet[attrName]) {
+              collectionResets[attrName] = query.valuesToSet[attrName];
+
+              // Remove the collection value from the valuesToSet because the adapter
+              // doesn't need to do anything during the initial update.
+              delete query.valuesToSet[attrName];
             }
 
-            // Remove the collection value from the newRecord because the adapter
-            // doesn't need to do anything during the initial create.
-            delete query.newRecord[attrName];
           }
         });//</ each known attribute def >
 
         // Hold a variable for the queries `meta` property that could possibly be
         // changed by us later on.
-        var modifiedMeta;
+        var modifiedMetaForCollectionResets;
 
         // If any collection resets were specified, force `fetch: true` (meta key)
         // so that we can use it below.
         if (_.keys(collectionResets).length > 0) {
           // Build a modified shallow clone of the originally-provided `meta`
           // that also has `fetch: true`.
-          modifiedMeta = _.extend({}, query.meta || {}, { fetch: true });
+          modifiedMetaForCollectionResets = _.extend({}, query.meta || {}, { fetch: true });
         }//>-
-
 
         //  ╔═╗╔═╗╦═╗╔═╗╔═╗  ┌─┐┌┬┐┌─┐┌─┐┌─┐  ┌┬┐┬ ┬┬─┐┌─┐┌─┐  ┌─┐ ┬ ┬┌─┐┬─┐┬ ┬
         //  ╠╣ ║ ║╠╦╝║ ╦║╣   └─┐ │ ├─┤│ ┬├┤    │ ├─┤├┬┘├┤ ├┤   │─┼┐│ │├┤ ├┬┘└┬┘
@@ -250,17 +297,18 @@ module.exports = function create(newRecord, explicitCbMaybe, metaContainer) {
         //  └─┘└─┘┘└┘─┴┘   ┴ └─┘  ╩ ╩═╩╝╩ ╩╩   ╩ ╚═╝╩╚═
         // Grab the appropriate adapter method and call it.
         var adapter = WLModel._adapter;
-        if (!adapter.create) {
+        if (!adapter.update) {
           return done(new Error('The adapter used by this model (`' + modelIdentity + '`) doesn\'t support the `'+query.method+'` method.'));
         }
 
         // Allow the query to possibly use the modified meta
-        query.meta = modifiedMeta || query.meta;
+        if (modifiedMetaForCollectionResets) {
+          query.meta = modifiedMetaForCollectionResets;
+        }
 
-        // And call the adapter method.
-        adapter.create(WLModel.datastore, query, function _afterTalkingToAdapter(err, rawAdapterResult) {
+        adapter.update(WLModel.datastore, query, function _afterTalkingToAdapter(err, rawAdapterResult) {
           if (err) {
-            err = forgeAdapterError(err, omen, 'create', modelIdentity, orm);
+            err = forgeAdapterError(err, omen, 'update', modelIdentity, orm);
             return done(err);
           }//-•
 
@@ -271,8 +319,8 @@ module.exports = function create(newRecord, explicitCbMaybe, metaContainer) {
           //  ┬ ┬┌─┐┌─┐  ┌─┐┌─┐┌┬┐  ┌┬┐┌─┐  ┌┬┐┬─┐┬ ┬┌─┐
           //  │││├─┤└─┐  └─┐├┤  │    │ │ │   │ ├┬┘│ │├┤
           //  └┴┘┴ ┴└─┘  └─┘└─┘ ┴    ┴ └─┘   ┴ ┴└─└─┘└─┘
+          var fetch = modifiedMetaForCollectionResets || (_.has(query.meta, 'fetch') && query.meta.fetch);
           // If `fetch` was not enabled, return.
-          var fetch = modifiedMeta || (_.has(query.meta, 'fetch') && query.meta.fetch);
           if (!fetch) {
 
             // > Note: This `if` statement is a convenience, for cases where the result from
@@ -287,8 +335,8 @@ module.exports = function create(newRecord, explicitCbMaybe, metaContainer) {
                 'Warning: Unexpected behavior in database adapter:\n'+
                 'Since `fetch` is NOT enabled, this adapter (for datastore `'+WLModel.datastore+'`)\n'+
                 'should NOT have sent back anything as the 2nd argument when triggering the callback\n'+
-                'from its `create` method.  But it did -- which is why this warning is being displayed:\n'+
-                'to help avoid confusion and draw attention to the bug.  Specifically, got:\n'+
+                'from its `update` method.  But it did!  And since it\'s an array, displaying this\n'+
+                'warning to help avoid confusion and draw attention to the bug.  Specifically, got:\n'+
                 util.inspect(rawAdapterResult, {depth:5})+'\n'+
                 '(Ignoring it and proceeding anyway...)'+'\n'
               );
@@ -302,26 +350,32 @@ module.exports = function create(newRecord, explicitCbMaybe, metaContainer) {
           // IWMIH then we know that `fetch: true` meta key was set, and so the
           // adapter should have sent back an array.
 
-          // Sanity check:
-          if (!_.isObject(rawAdapterResult) || _.isArray(rawAdapterResult) || _.isFunction(rawAdapterResult)) {
-            return done(new Error('Consistency violation: expected `create` adapter method to send back the created record b/c `fetch: true` was enabled.  But instead, got: ' + util.inspect(rawAdapterResult, {depth:5})+''));
-          }
+          // Verify that the raw result from the adapter is an array.
+          if (!_.isArray(rawAdapterResult)) {
+            return done(new Error(
+              'Unexpected behavior in database adapter: Since `fetch: true` was enabled, this adapter '+
+              '(for datastore `'+WLModel.datastore+'`) should have sent back an array of records as the '+
+              '2nd argument when triggering the callback from its `update` method.  But instead, got: '+
+              util.inspect(rawAdapterResult, {depth:5})+''
+            ));
+          }//-•
 
-          //  ╔╦╗╦═╗╔═╗╔╗╔╔═╗╔═╗╔═╗╦═╗╔╦╗  ┌─┐┌┬┐┌─┐┌─┐┌┬┐┌─┐┬─┐  ┬─┐┌─┐┌─┐┬ ┬┬ ┌┬┐
-          //   ║ ╠╦╝╠═╣║║║╚═╗╠╣ ║ ║╠╦╝║║║  ├─┤ ││├─┤├─┘ │ ├┤ ├┬┘  ├┬┘├┤ └─┐│ ││  │
-          //   ╩ ╩╚═╩ ╩╝╚╝╚═╝╚  ╚═╝╩╚═╩ ╩  ┴ ┴─┴┘┴ ┴┴   ┴ └─┘┴└─  ┴└─└─┘└─┘└─┘┴─┘┴
-          // Attempt to convert the record's column names to attribute names.
-          var transformedRecord;
+          // Unserialize each record
+          var transformedRecords;
           try {
-            transformedRecord = WLModel._transformer.unserialize(rawAdapterResult);
+            // Attempt to convert the column names in each record back into attribute names.
+            transformedRecords = rawAdapterResult.map(function(record) {
+              return WLModel._transformer.unserialize(record);
+            });
           } catch (e) { return done(e); }
 
-          // Check the record to verify compliance with the adapter spec,
+
+          // Check the records to verify compliance with the adapter spec,
           // as well as any issues related to stale data that might not have been
           // been migrated to keep up with the logical schema (`type`, etc. in
           // attribute definitions).
           try {
-            processAllRecords([ transformedRecord ], query.meta, modelIdentity, orm);
+            processAllRecords(transformedRecords, query.meta, modelIdentity, orm);
           } catch (e) { return done(e); }
 
 
@@ -331,10 +385,10 @@ module.exports = function create(newRecord, explicitCbMaybe, metaContainer) {
           //  ┌─┐─┐ ┬┌─┐┬  ┬┌─┐┬┌┬┐┬ ┬ ┬   ┌─┐┌─┐┌─┐┌─┐┬┌─┐┬┌─┐┌┬┐  ┌─┐┌─┐┌─┐┌─┐┌─┐┬┌─┐┌┬┐┬┌─┐┌┐┌┌─┐
           //  ├┤ ┌┴┬┘├─┘│  ││  │ │ │ └┬┘───└─┐├─┘├┤ │  │├┤ │├┤  ││  ├─┤└─┐└─┐│ ││  │├─┤ │ ││ ││││└─┐
           //  └─┘┴ └─┴  ┴─┘┴└─┘┴ ┴ ┴─┘┴    └─┘┴  └─┘└─┘┴└  ┴└─┘─┴┘  ┴ ┴└─┘└─┘└─┘└─┘┴┴ ┴ ┴ ┴└─┘┘└┘└─┘
-          var targetId = transformedRecord[WLModel.primaryKey];
+          var targetIds = _.pluck(transformedRecords, WLModel.primaryKey);
           async.each(_.keys(collectionResets), function _eachReplaceCollectionOp(collectionAttrName, next) {
 
-            WLModel.replaceCollection(targetId, collectionAttrName, collectionResets[collectionAttrName], function(err){
+            WLModel.replaceCollection(targetIds, collectionAttrName, collectionResets[collectionAttrName], function(err){
               if (err) { return next(err); }
               return next();
             }, query.meta);
@@ -343,41 +397,55 @@ module.exports = function create(newRecord, explicitCbMaybe, metaContainer) {
           function _afterReplacingAllCollections(err) {
             if (err) { return done(err); }
 
-            //  ╔═╗╔═╗╔╦╗╔═╗╦═╗  ┌─┐┬─┐┌─┐┌─┐┌┬┐┌─┐  ┌─┐┌─┐┬  ┬  ┌┐ ┌─┐┌─┐┬┌─
-            //  ╠═╣╠╣  ║ ║╣ ╠╦╝  │  ├┬┘├┤ ├─┤ │ ├┤   │  ├─┤│  │  ├┴┐├─┤│  ├┴┐
-            //  ╩ ╩╚   ╩ ╚═╝╩╚═  └─┘┴└─└─┘┴ ┴ ┴ └─┘  └─┘┴ ┴┴─┘┴─┘└─┘┴ ┴└─┘┴ ┴
-            (function _maybeRunAfterLC(proceed){
 
-              // If the `skipAllLifecycleCallbacks` meta flag was set, don't run the LC.
+            //  ╔═╗╔═╗╔╦╗╔═╗╦═╗  ┬ ┬┌─┐┌┬┐┌─┐┌┬┐┌─┐  ┌─┐┌─┐┬  ┬  ┌┐ ┌─┐┌─┐┬┌─
+            //  ╠═╣╠╣  ║ ║╣ ╠╦╝  │ │├─┘ ││├─┤ │ ├┤   │  ├─┤│  │  ├┴┐├─┤│  ├┴┐
+            //  ╩ ╩╚   ╩ ╚═╝╩╚═  └─┘┴  ─┴┘┴ ┴ ┴ └─┘  └─┘┴ ┴┴─┘┴─┘└─┘┴ ┴└─┘┴ ┴
+            // Run "after" lifecycle callback AGAIN and AGAIN- once for each record.
+            // ============================================================
+            // FUTURE: look into this
+            // (we probably shouldn't call this again and again--
+            // plus what if `fetch` is not in use and you want to use an LC?
+            // Then again- the right answer isn't immediately clear.  And it
+            // probably not worth breaking compatibility until we have a much
+            // better solution)
+            // ============================================================
+            async.each(transformedRecords, function _eachRecord(record, next) {
+
+              // If the `skipAllLifecycleCallbacks` meta flag was set, don't run any of
+              // the methods.
               if (_.has(query.meta, 'skipAllLifecycleCallbacks') && query.meta.skipAllLifecycleCallbacks) {
-                return proceed(undefined, transformedRecord);
-              }//-•
+                return next();
+              }
 
-              // If no afterCreate callback defined, just proceed.
-              if (!_.has(WLModel._callbacks, 'afterCreate')) {
-                return proceed(undefined, transformedRecord);
-              }//-•
+              // Skip "after" lifecycle callback, if not defined.
+              if (!_.has(WLModel._callbacks, 'afterUpdate')) {
+                return next();
+              }
 
-              // Otherwise, run it.
-              return WLModel._callbacks.afterCreate(transformedRecord, function(err) {
+              // Otherwise run it.
+              WLModel._callbacks.afterUpdate(record, function _afterMaybeRunningAfterUpdateForThisRecord(err) {
                 if (err) {
-                  return proceed(err);
+                  return next(err);
                 }
 
-                return proceed(undefined, transformedRecord);
+                return next();
               });
 
-            })(function _afterPotentiallyRunningAfterLC(err, transformedRecord) {
-              if (err) { return done(err); }
+            },// ~∞%°
+            function _afterIteratingOverRecords(err) {
+              if (err) {
+                return done(err);
+              }
 
-              // Return the new record.
-              return done(undefined, transformedRecord);
+              return done(undefined, transformedRecords);
 
-            });//</ ran "after" lifecycle callback, maybe >
+            });//</ async.each() -- ran "after" lifecycle callback on each record >
 
           });//</ async.each()  (calling replaceCollection() for each explicitly-specified plural association) >
-        });//</ adapter.create() >
-      });//</ ran "before" lifecycle callback, maybe >
+        });//</ adapter.update() >
+      });//</ "before" lifecycle callback >
+
     },
 
 
@@ -397,3 +465,5 @@ module.exports = function create(newRecord, explicitCbMaybe, metaContainer) {
   );//</parley>
 
 };
+
+}

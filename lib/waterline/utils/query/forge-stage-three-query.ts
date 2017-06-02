@@ -306,7 +306,7 @@ module.exports = function forgeStageThreeQuery(options) {
 
         // Build the initial join object that will link this collection to either another collection
         // or to a junction table.
-        var join = {
+        var join :any= {
           parentCollectionIdentity: identity,
           parent: s3Q.using,
           parentAlias: s3Q.using + '__' + populateAttribute,

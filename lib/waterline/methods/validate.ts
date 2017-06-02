@@ -1,7 +1,7 @@
 /**
  * Module dependencies
  */
-
+import { IQuery } from '../interfaces/query';
 var _ = require('@sailshq/lodash');
 var flaverr = require('flaverr');
 var normalizeValueToSet = require('../utils/query/private/normalize-value-to-set');
@@ -104,69 +104,73 @@ var verifyModelMethodContext = require('../utils/query/verify-model-method-conte
  * @throws {Error} If anything else unexpected occurs.
  *
  */
+export class MethodValidate {
 
-module.exports = function validate(attrName, value) {
+  public static execute(obj, attrName, value) {
 
-  // Verify `this` refers to an actual Sails/Waterline model.
-  verifyModelMethodContext(this);
+    // Verify `this` refers to an actual Sails/Waterline model.
+    verifyModelMethodContext(this);
 
-  // Set up a few, common local vars for convenience / familiarity.
-  var orm = this.waterline;
-  var modelIdentity = this.identity;
+    // Set up a few, common local vars for convenience / familiarity.
+    var orm = obj.waterline;
+    var modelIdentity = obj.identity;
 
-  if (!_.isString(attrName)) {
-    throw flaverr({ name: 'UsageError' }, new Error(
-      'Please specify the name of the attribute to validate against (1st argument).'
-    ));
-  }//-•
+    if (!_.isString(attrName)) {
+      throw flaverr({ name: 'UsageError' }, new Error(
+        'Please specify the name of the attribute to validate against (1st argument).'
+      ));
+    }//-•
 
-  var normalizedVal;
-  try {
-    normalizedVal = normalizeValueToSet(value, attrName, modelIdentity, orm, false);
-  } catch (e) {
-    switch (e.code) {
+    var normalizedVal;
+    try {
+      normalizedVal = normalizeValueToSet(value, attrName, modelIdentity, orm, false);
+    } catch (e) {
+      switch (e.code) {
 
-      // If it is determined that this should be ignored, it's either because
-      // the attr is outside of the schema or the value is undefined.  In this
-      // case, set it to `undefined` and then continue on ahead to the checks
-      // below.
-      case 'E_SHOULD_BE_IGNORED':
-        normalizedVal = undefined;
-        break;
+        // If it is determined that this should be ignored, it's either because
+        // the attr is outside of the schema or the value is undefined.  In this
+        // case, set it to `undefined` and then continue on ahead to the checks
+        // below.
+        case 'E_SHOULD_BE_IGNORED':
+          normalizedVal = undefined;
+          break;
 
-      // Violated the attribute's validation ruleset
-      case 'E_VIOLATES_RULES':
-        throw e;
+        // Violated the attribute's validation ruleset
+        case 'E_VIOLATES_RULES':
+          throw e;
 
-      // Failed requireness guarantee
-      case 'E_REQUIRED':
-        throw e;
+        // Failed requireness guarantee
+        case 'E_REQUIRED':
+          throw e;
 
-      // Failed type safety check
-      case 'E_TYPE':
-        throw e;
+        // Failed type safety check
+        case 'E_TYPE':
+          throw e;
 
-      // Miscellaneous incompatibility
-      case 'E_HIGHLY_IRREGULAR':
-        throw e;
+        // Miscellaneous incompatibility
+        case 'E_HIGHLY_IRREGULAR':
+          throw e;
 
-      // Unexpected error
-      default:
-        throw e;
-    }
-  }//>-•
+        // Unexpected error
+        default:
+          throw e;
+      }
+    }//>-•
 
-  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  // FUTURE: expand this logic so that it can work like it does for `.create()`
-  // (in addition or instead of just working like it does for .update())
-  //
-  // That entails applying required and defaultsTo down here at the bottom,
-  // and figuring out what makes sense to do for the auto timestamps.  Note
-  // that we'll also need to change the `false` flag above to `true` (the one
-  // we pass in to normalizeValueToSet)
-  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    // FUTURE: expand this logic so that it can work like it does for `.create()`
+    // (in addition or instead of just working like it does for .update())
+    //
+    // That entails applying required and defaultsTo down here at the bottom,
+    // and figuring out what makes sense to do for the auto timestamps.  Note
+    // that we'll also need to change the `false` flag above to `true` (the one
+    // we pass in to normalizeValueToSet)
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  // Return normalized value.
-  return normalizedVal;
+    // Return normalized value.
+    return normalizedVal;
 
-};
+  };
+
+}
+

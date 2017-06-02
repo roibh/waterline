@@ -1,15 +1,12 @@
 /**
  * Module dependencies
  */
-
+import {IQuery} from '../interfaces/query';
 var _ = require('@sailshq/lodash');
 var flaverr = require('flaverr');
 var parley = require('parley');
-var buildOmen = require('../utils/query/build-omen');
 var forgeStageTwoQuery = require('../utils/query/forge-stage-two-query');
 var getQueryModifierMethods = require('../utils/query/get-query-modifier-methods');
-var helpFind = require('../utils/query/help-find');
-var processAllRecords = require('../utils/query/process-all-records');
 var verifyModelMethodContext = require('../utils/query/verify-model-method-context');
 
 
@@ -17,19 +14,20 @@ var verifyModelMethodContext = require('../utils/query/verify-model-method-conte
  * Module constants
  */
 
-var DEFERRED_METHODS = getQueryModifierMethods('find');
+var DEFERRED_METHODS = getQueryModifierMethods('findOrCreate');
+
 
 
 /**
- * find()
+ * findOrCreate()
  *
- * Find records that match the specified criteria.
+ * Find the record matching the specified criteria.  If no record exists or more
+ * than one record matches the criteria, an error will be returned.
  *
  * ```
- * // Look up all bank accounts with more than $32,000 in them.
- * BankAccount.find().where({
- *   balance: { '>': 32000 }
- * }).exec(function(err, bankAccounts) {
+ * // Ensure an a pet with type dog exists
+ * PetType.findOrCreate({ type: 'dog' }, { name: 'Pretend pet type', type: 'dog' })
+ * .exec(function(err, petType, wasCreated) {
  *   // ...
  * });
  * ```
@@ -41,7 +39,7 @@ var DEFERRED_METHODS = getQueryModifierMethods('find');
  *
  * @param {Dictionary?} criteria
  *
- * @param {Dictionary} populates
+ * @param {Dictionary} newRecord
  *
  * @param {Function?} explicitCbMaybe
  *        Callback function to run when query has either finished successfully or errored.
@@ -58,7 +56,7 @@ var DEFERRED_METHODS = getQueryModifierMethods('find');
  * ==============================
  *
  * @qkey {Dictionary?} criteria
- * @qkey {Dictionary?} populates
+ * @qkey {Dictionary?} newRecord
  *
  * @qkey {Dictionary?} meta
  * @qkey {String} using
@@ -66,23 +64,32 @@ var DEFERRED_METHODS = getQueryModifierMethods('find');
  *
  * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  */
-
-module.exports = function find( /* criteria?, populates?, explicitCbMaybe?, meta? */ ) {
-
-  // Verify `this` refers to an actual Sails/Waterline model.
-  verifyModelMethodContext(this);
+export class MethodFindOrCreate
+{
+  public static execute(obj, criteria?, newRecord?, explicitCbMaybe?, meta?)
+  {
+// Verify `this` refers to an actual Sails/Waterline model.
+  verifyModelMethodContext(obj);
 
   // Set up a few, common local vars for convenience / familiarity.
-  var WLModel = this;
-  var orm = this.waterline;
-  var modelIdentity = this.identity;
+  var WLModel = obj;
+  var orm = obj.waterline;
+  var modelIdentity = obj.identity;
 
-  // Build an omen for potential use in the asynchronous callbacks below.
-  var omen = buildOmen(find);
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // FUTURE: Potentially build an omen here for potential use in an
+  // asynchronous callback below if/when an error occurs.  This would
+  // provide for a better stack trace, since it would be based off of
+  // the original method call, rather than containing extra stack entries
+  // from various utilities calling each other within Waterline itself.
+  //
+  // > Note that it'd need to be passed in to the other model methods that
+  // > get called internally.
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   // Build query w/ initial, universal keys.
-  var query = {
-    method: 'find',
+  var query:IQuery = {
+    method: 'findOrCreate',
     using: modelIdentity
   };
 
@@ -111,26 +118,11 @@ module.exports = function find( /* criteria?, populates?, explicitCbMaybe?, meta
     args[i] = arguments[i];
   }
 
-  // • find(explicitCbMaybe, ...)
-  if (args.length >= 1 && _.isFunction(args[0])) {
-    explicitCbMaybe = args[0];
-    query.meta = args[1];
-  }
-  // • find(criteria, explicitCbMaybe, ...)
-  else if (args.length >= 2 && _.isFunction(args[1])) {
-    query.criteria = args[0];
-    explicitCbMaybe = args[1];
-    query.meta = args[2];
-  }
-  // • find()
-  // • find(criteria)
-  // • find(criteria, populates, ...)
-  else {
-    query.criteria = args[0];
-    query.populates = args[1];
-    explicitCbMaybe = args[2];
-    query.meta = args[3];
-  }
+  // • findOrCreate(criteria, newRecord, explicitCbMaybe, ...)
+  query.criteria = args[0];
+  query.newRecord = args[1];
+  explicitCbMaybe = args[2];
+  query.meta = args[3];
 
 
   //  ██████╗ ███████╗███████╗███████╗██████╗
@@ -153,23 +145,23 @@ module.exports = function find( /* criteria?, populates?, explicitCbMaybe?, meta
   //  ┌─    ┬┌─┐  ┬─┐┌─┐┬  ┌─┐┬  ┬┌─┐┌┐┌┌┬┐    ─┐
   //  │───  │├┤   ├┬┘├┤ │  ├┤ └┐┌┘├─┤│││ │   ───│
   //  └─    ┴└    ┴└─└─┘┴─┘└─┘ └┘ ┴ ┴┘└┘ ┴     ─┘
-  // If a callback function was not specified, then build a new Deferred and bail now.
-  //
-  // > This method will be called AGAIN automatically when the Deferred is executed.
-  // > and next time, it'll have a callback.
+  // If an explicit callback function was specified, then immediately run the logic below
+  // and trigger the explicit callback when the time comes.  Otherwise, build and return
+  // a new Deferred now. (If/when the Deferred is executed, the logic below will run.)
   return parley(
 
     function (done){
 
-      // Otherwise, IWMIH, we know that a callback was specified.
+      // Otherwise, IWMIH, we know that it's time to actually do some stuff.
       // So...
-
+      //
       //  ███████╗██╗  ██╗███████╗ ██████╗██╗   ██╗████████╗███████╗
       //  ██╔════╝╚██╗██╔╝██╔════╝██╔════╝██║   ██║╚══██╔══╝██╔════╝
       //  █████╗   ╚███╔╝ █████╗  ██║     ██║   ██║   ██║   █████╗
       //  ██╔══╝   ██╔██╗ ██╔══╝  ██║     ██║   ██║   ██║   ██╔══╝
       //  ███████╗██╔╝ ██╗███████╗╚██████╗╚██████╔╝   ██║   ███████╗
       //  ╚══════╝╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═════╝    ╚═╝   ╚══════╝
+
 
       //  ╔═╗╔═╗╦═╗╔═╗╔═╗  ┌─┐┌┬┐┌─┐┌─┐┌─┐  ┌┬┐┬ ┬┌─┐  ┌─┐ ┬ ┬┌─┐┬─┐┬ ┬
       //  ╠╣ ║ ║╠╦╝║ ╦║╣   └─┐ │ ├─┤│ ┬├┤    │ ││││ │  │─┼┐│ │├┤ ├┬┘└┬┘
@@ -180,13 +172,10 @@ module.exports = function find( /* criteria?, populates?, explicitCbMaybe?, meta
         forgeStageTwoQuery(query, orm);
       } catch (e) {
         switch (e.code) {
-
           case 'E_INVALID_CRITERIA':
             return done(
               flaverr(
-                {
-                  name: 'UsageError'
-                },
+                { name: 'UsageError' },
                 new Error(
                   'Invalid criteria.\n' +
                   'Details:\n' +
@@ -195,107 +184,94 @@ module.exports = function find( /* criteria?, populates?, explicitCbMaybe?, meta
               )
             );
 
-          case 'E_INVALID_POPULATES':
+          case 'E_INVALID_NEW_RECORDS':
             return done(
               flaverr(
-                {
-                  name: 'UsageError'
-                },
+                { name: 'UsageError' },
                 new Error(
-                  'Invalid populate(s).\n' +
-                  'Details:\n' +
-                  '  ' + e.details + '\n'
+                  'Invalid new record(s).\n'+
+                  'Details:\n'+
+                  '  '+e.details+'\n'
                 )
               )
             );
-
           case 'E_NOOP':
-            return done(undefined, []);
+            // If the criteria is deemed to be a no-op, then normalize it into a standard format.
+            // This way, it will continue to represent a no-op as we proceed below, so the `findOne()`
+            // call will also come back with an E_NOOP, and so then it will go on to do a `.create()`.
+            // And most importantly, this way we don't have to worry about the case where the no-op
+            // was caused by an edge case like `false` (we need to be able to munge the criteria --
+            // i.e. deleting the `limit`).
+            var STD_NOOP_CRITERIA = { where: { or: [] } };
+            query.criteria = STD_NOOP_CRITERIA;
+            break;
 
           default:
             return done(e);
         }
-      } // >-•
+      }// >-•
 
-      //  ┬ ┬┌─┐┌┐┌┌┬┐┬  ┌─┐  ╔╗ ╔═╗╔═╗╔═╗╦═╗╔═╗  ┬  ┬┌─┐┌─┐┌─┐┬ ┬┌─┐┬  ┌─┐  ┌─┐┌─┐┬  ┬  ┌┐ ┌─┐┌─┐┬┌─
-      //  ├─┤├─┤│││ │││  ├┤   ╠╩╗║╣ ╠╣ ║ ║╠╦╝║╣   │  │├┤ ├┤ │  └┬┘│  │  ├┤   │  ├─┤│  │  ├┴┐├─┤│  ├┴┐
-      //  ┴ ┴┴ ┴┘└┘─┴┘┴─┘└─┘  ╚═╝╚═╝╚  ╚═╝╩╚═╚═╝  ┴─┘┴└  └─┘└─┘ ┴ └─┘┴─┘└─┘  └─┘┴ ┴┴─┘┴─┘└─┘┴ ┴└─┘┴ ┴
-      // Determine what to do about running any lifecycle callbacks
-      (function _maybeRunBeforeLC(proceed) {
-        // If the `skipAllLifecycleCallbacks` meta flag was set, don't run any of
-        // the methods.
-        if (_.has(query.meta, 'skipAllLifecycleCallbacks') && query.meta.skipAllLifecycleCallbacks) {
-          return proceed(undefined, query);
-        }
 
-        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-        // FUTURE: This is where the `beforeFind()` lifecycle callback would go
-        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-        return proceed(undefined, query);
+      // Remove the `limit`, `skip`, and `sort` clauses so that our findOne query is valid.
+      // (This is because they were automatically attached above.)
+      delete query.criteria.limit;
+      delete query.criteria.skip;
+      delete query.criteria.sort;
 
-      })(function _afterPotentiallyRunningBeforeLC(err, query) {
+
+      //  ╔═╗═╗ ╦╔═╗╔═╗╦ ╦╔╦╗╔═╗  ┌─┐┬┌┐┌┌┬┐  ┌─┐┌┐┌┌─┐  ┌─┐ ┬ ┬┌─┐┬─┐┬ ┬
+      //  ║╣ ╔╩╦╝║╣ ║  ║ ║ ║ ║╣   ├┤ ││││ ││  │ ││││├┤   │─┼┐│ │├┤ ├┬┘└┬┘
+      //  ╚═╝╩ ╚═╚═╝╚═╝╚═╝ ╩ ╚═╝  └  ┴┘└┘─┴┘  └─┘┘└┘└─┘  └─┘└└─┘└─┘┴└─ ┴
+      // Note that we pass in `meta` here, which ensures we're on the same db connection.
+      // (provided one was explicitly passed in!)
+      WLModel.findOne(query.criteria, function _afterPotentiallyFinding(err, foundRecord) {
         if (err) {
           return done(err);
         }
 
+        // Note that we pass through a flag as the third argument to our callback,
+        // indicating whether a new record was created.
+        if (foundRecord) {
+          return done(undefined, foundRecord, false);
+        }
 
-        // ================================================================================
-        // FUTURE: potentially bring this back (but also would need the `omit clause`)
-        // ================================================================================
-        // // Before we get to forging again, save a copy of the stage 2 query's
-        // // `select` clause.  We'll need this later on when processing the resulting
-        // // records, and if we don't copy it now, it might be damaged by the forging.
-        // //
-        // // > Note that we don't need a deep clone.
-        // // > (That's because the `select` clause is only 1 level deep.)
-        // var s2QSelectClause = _.clone(query.criteria.select);
-        // ================================================================================
+        // So that the create query is valid, check if the primary key value was
+        // automatically set to `null` by FS2Q (i.e. because it was unspecified.)
+        // And if so, remove it.
+        //
+        // > IWMIH, we know this was automatic because, if `null` had been
+        // > specified explicitly, it would have already caused an error in
+        // > our call to FS2Q above (`null` is NEVER a valid PK value)
+        var pkAttrName = WLModel.primaryKey;
+        var wasPKValueCoercedToNull = _.isNull(query.newRecord[pkAttrName]);
+        if (wasPKValueCoercedToNull) {
+          delete query.newRecord[pkAttrName];
+        }
 
-        //  ┌─┐┌─┐┌┐┌┌┬┐  ┌┬┐┌─┐  ╔═╗╔╦╗╔═╗╔═╗╔╦╗╔═╗╦═╗
-        //  └─┐├┤ │││ ││   │ │ │  ╠═╣ ║║╠═╣╠═╝ ║ ║╣ ╠╦╝
-        //  └─┘└─┘┘└┘─┴┘   ┴ └─┘  ╩ ╩═╩╝╩ ╩╩   ╩ ╚═╝╩╚═
-        // Use `helpFind()` to forge stage 3 quer(y/ies) and then call the appropriate adapters' method(s).
-        // > Note: `helpFind` is responsible for running the `transformer`.
-        // > (i.e. so that column names are transformed back into attribute names)
-        helpFind(WLModel, query, omen, function _afterFetchingRecords(err, populatedRecords) {
+        // Build a modified shallow clone of the originally-provided `meta`
+        // that also has `fetch: true`.
+        var modifiedMeta = _.extend({}, query.meta || {}, { fetch: true });
+
+        //  ╔═╗═╗ ╦╔═╗╔═╗╦ ╦╔╦╗╔═╗  ┌─┐┬─┐┌─┐┌─┐┌┬┐┌─┐  ┌─┐ ┬ ┬┌─┐┬─┐┬ ┬
+        //  ║╣ ╔╩╦╝║╣ ║  ║ ║ ║ ║╣   │  ├┬┘├┤ ├─┤ │ ├┤   │─┼┐│ │├┤ ├┬┘└┬┘
+        //  ╚═╝╩ ╚═╚═╝╚═╝╚═╝ ╩ ╚═╝  └─┘┴└─└─┘┴ ┴ ┴ └─┘  └─┘└└─┘└─┘┴└─ ┴
+        WLModel.create(query.newRecord, function _afterCreating(err, createdRecord) {
           if (err) {
             return done(err);
-          }//-•
+          }
 
-          // Process the record to verify compliance with the adapter spec.
-          // Check the record to verify compliance with the adapter spec.,
-          // as well as any issues related to stale data that might not have been
-          // been migrated to keep up with the logical schema (`type`, etc. in
-          // attribute definitions).
-          try {
-            processAllRecords(populatedRecords, query.meta, modelIdentity, orm);
-          } catch (e) { return done(e); }
+          // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+          // FUTURE: Instead of preventing projections (`omit`/`select`) for findOrCreate,
+          // instead allow them and just modify the newly created record after the fact
+          // (i.e. trim properties in-memory).
+          // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-          //  ┬ ┬┌─┐┌┐┌┌┬┐┬  ┌─┐  ╔═╗╔═╗╔╦╗╔═╗╦═╗  ┬  ┬┌─┐┌─┐┌─┐┬ ┬┌─┐┬  ┌─┐  ┌─┐┌─┐┬  ┬  ┌┐ ┌─┐┌─┐┬┌─
-          //  ├─┤├─┤│││ │││  ├┤   ╠═╣╠╣  ║ ║╣ ╠╦╝  │  │├┤ ├┤ │  └┬┘│  │  ├┤   │  ├─┤│  │  ├┴┐├─┤│  ├┴┐
-          //  ┴ ┴┴ ┴┘└┘─┴┘┴─┘└─┘  ╩ ╩╚   ╩ ╚═╝╩╚═  ┴─┘┴└  └─┘└─┘ ┴ └─┘┴─┘└─┘  └─┘┴ ┴┴─┘┴─┘└─┘┴ ┴└─┘┴ ┴
-          (function _maybeRunAfterLC(proceed){
+          // Pass the newly-created record to our callback.
+          // > Note we set the `wasCreated` flag to `true` in this case.
+          return done(undefined, createdRecord, true);
 
-            // If the `skipAllLifecycleCallbacks` meta key was enabled, then don't run this LC.
-            if (_.has(query.meta, 'skipAllLifecycleCallbacks') && query.meta.skipAllLifecycleCallbacks) {
-              return proceed(undefined, populatedRecords);
-            }//-•
-
-            // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-            // FUTURE: This is where the `afterFind()` lifecycle callback would go
-            // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-            return proceed(undefined, populatedRecords);
-
-          })(function _afterPotentiallyRunningAfterLC(err, populatedRecords) {
-            if (err) { return done(err); }
-
-            // All done.
-            return done(undefined, populatedRecords);
-
-          });//</ self-calling functionto handle "after" lifecycle callback >
-        }); //</ helpFind() >
-      }); //</ self-calling function to handle "before" lifecycle callback >
-
+        }, modifiedMeta);//</.create()>
+      }, query.meta);//</.findOne()>
     },
 
 
@@ -312,6 +288,12 @@ module.exports = function find( /* criteria?, populates?, explicitCbMaybe?, meta
 
     })
 
-  );//</ parley() >
+  );//</parley>
+  }
+
+}
+module.exports = function findOrCreate( /* criteria?, newRecord?, explicitCbMaybe?, meta? */ ) {
+
+  
 
 };

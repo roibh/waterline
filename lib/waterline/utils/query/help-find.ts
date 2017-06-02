@@ -84,7 +84,7 @@ module.exports = function helpFind(WLModel, s2q, omen, done) {
   var parentAdapter = WLModel._adapter;
 
   // Now, run whatever queries we need, and merge the results together.
-  (function _getPopulatedRecords(proceed){
+  (function _getPopulatedRecords(proceed: Function) {
 
     //  ┌┬┐┌─┐  ┬ ┬┌─┐  ┌┐┌┌─┐┌─┐┌┬┐  ┌─┐┬ ┬┬┌┬┐┌─┐
     //   │││ │  │││├┤   │││├┤ ├┤  ││  └─┐├─┤││││ ┌┘
@@ -93,14 +93,14 @@ module.exports = function helpFind(WLModel, s2q, omen, done) {
     var doJoinsInParentAdapter = (function () {
       // First of all, there must be joins in the query to make this relevant.
       return (parentQuery.joins && parentQuery.joins.length) &&
-      // Second, the adapter must support native joins.
-      _.isFunction(WLModel._adapter.join) &&
-      // And lastly, all of the child models must be on the same datastore.
-      _.all(parentQuery.joins, function(join) {
-        // Check the child table in the join (we've already checked the parent table,
-        // either in a previous iteration or because it's the main parent).
-        return collections[join.childCollectionIdentity].datastore === WLModel.datastore;
-      });
+        // Second, the adapter must support native joins.
+        _.isFunction(WLModel._adapter.join) &&
+        // And lastly, all of the child models must be on the same datastore.
+        _.all(parentQuery.joins, function (join) {
+          // Check the child table in the join (we've already checked the parent table,
+          // either in a previous iteration or because it's the main parent).
+          return collections[join.childCollectionIdentity].datastore === WLModel.datastore;
+        });
     })();
 
     //  ┌┬┐┌─┐  ┌┐┌┌─┐┌┬┐┬┬  ┬┌─┐   ┬┌─┐┬┌┐┌┌─┐
@@ -145,7 +145,7 @@ module.exports = function helpFind(WLModel, s2q, omen, done) {
     else {
 
       // First step -- group all of the joins by alias.
-      var joinsByAlias = _.groupBy(parentQuery.joins, function(join) { return join.alias; });
+      var joinsByAlias = _.groupBy(parentQuery.joins, function (join) { return join.alias; });
 
       // console.log('joinsByAlias', require('util').inspect(joinsByAlias, {depth: null}));
 
@@ -195,7 +195,7 @@ module.exports = function helpFind(WLModel, s2q, omen, done) {
         }
 
         // Now that we have the parent query results, we'll run each set of joins and integrate.
-        async.reduce(_.keys(joinsByAlias), parentResults, function(populatedParentRecords, alias, nextSetOfJoins) {
+        async.reduce(_.keys(joinsByAlias), parentResults, function (populatedParentRecords, alias, nextSetOfJoins) {
 
           // Get the set of joins for this alias.
           var aliasJoins = joinsByAlias[alias];
@@ -207,7 +207,7 @@ module.exports = function helpFind(WLModel, s2q, omen, done) {
           if (aliasJoins.length === 2) {
 
             // The first query we want to run is from the parent table to the junction table.
-            var firstJoin = _.first(_.remove(aliasJoins, function(join) { return join.parentCollectionIdentity === WLModel.identity; }));
+            var firstJoin = _.first(_.remove(aliasJoins, function (join) { return join.parentCollectionIdentity === WLModel.identity; }));
 
             // The remaining join is to the child table.
             var secondJoin = aliasJoins[0];
@@ -226,22 +226,22 @@ module.exports = function helpFind(WLModel, s2q, omen, done) {
                   and: []
                 },
                 skip: 0,
-                limit: Number.MAX_SAFE_INTEGER||9007199254740991,
+                limit: Number.MAX_SAFE_INTEGER || 9007199254740991,
                 select: [junctionTablePrimaryKeyColumnName, firstJoin.childKey, secondJoin.parentKey]
-              },
+              } as any,
               meta: parentQuery.meta,
             };
 
             // Add a "sort" clause to the criteria, using the junction table's primary key.
             var comparatorDirective = {};
             comparatorDirective[junctionTablePrimaryKeyColumnName] = 'ASC';
-            junctionTableQuery.criteria.sort = [ comparatorDirective ];
+            junctionTableQuery.criteria.sort = [comparatorDirective];
 
             // Grab all of the primary keys found in the parent query, build them into an
             // `in` constraint, then push that on as a conjunct for the junction table query's
             // criteria.
             var junctionTableQueryInConjunct = {};
-            junctionTableQueryInConjunct[firstJoin.childKey] = {in: _.pluck(parentResults, firstJoin.parentKey)};
+            junctionTableQueryInConjunct[firstJoin.childKey] = { in: _.pluck(parentResults, firstJoin.parentKey) };
             junctionTableQuery.criteria.where.and.push(junctionTableQueryInConjunct);
 
             // We now have a valid "stage 3" query, so let's run that and get the junction table results.
@@ -250,7 +250,7 @@ module.exports = function helpFind(WLModel, s2q, omen, done) {
             // Next, get the adapter for that datastore.
             var junctionTableAdapter = junctionTableModel._adapter;
             // Finally, run the query on the adapter.
-            junctionTableAdapter.find(junctionTableDatastoreName, junctionTableQuery, function(err, junctionTableResults) {
+            junctionTableAdapter.find(junctionTableDatastoreName, junctionTableQuery, function (err, junctionTableResults) {
               if (err) {
                 // Note that we're careful to use the identity, not the table name!
                 err = forgeAdapterError(err, omen, 'find', junctionTableModel.identity, orm);
@@ -285,7 +285,7 @@ module.exports = function helpFind(WLModel, s2q, omen, done) {
                   where: {
                     and: []
                   }
-                },
+                } as any,
                 meta: meta
               };
 
@@ -316,7 +316,7 @@ module.exports = function helpFind(WLModel, s2q, omen, done) {
               if (!_.isUndefined(secondJoin.criteria.limit)) {
                 baseChildTableQuery.criteria.limit = secondJoin.criteria.limit;
               } else {
-                baseChildTableQuery.criteria.limit = Number.MAX_SAFE_INTEGER||9007199254740991;
+                baseChildTableQuery.criteria.limit = Number.MAX_SAFE_INTEGER || 9007199254740991;
               }
 
               // If the user's subcriteria contained a `sort`, add it to our criteria.
@@ -324,10 +324,10 @@ module.exports = function helpFind(WLModel, s2q, omen, done) {
               if (!_.isUndefined(secondJoin.criteria.sort)) {
                 baseChildTableQuery.criteria.sort = secondJoin.criteria.sort;
               } else {
-                baseChildTableQuery.criteria.sort = (function() {
+                baseChildTableQuery.criteria.sort = (function () {
                   var comparatorDirective = {};
                   comparatorDirective[childTableModel.primaryKey] = 'ASC';
-                  return [ comparatorDirective ];
+                  return [comparatorDirective];
                 })();
               }
 
@@ -342,14 +342,14 @@ module.exports = function helpFind(WLModel, s2q, omen, done) {
 
               // Loop over those parent primary keys and do one query to the child table per parent,
               // collecting the results in a dictionary organized by parent PK.
-              async.reduce(parentPks, {}, function(memo, parentPk, nextParentPk) {
+              async.reduce(parentPks, {}, function (memo, parentPk, nextParentPk) {
 
                 var childTableQuery = _.cloneDeep(baseChildTableQuery);
 
                 // Get all the records in the junction table result where the value of the foreign key
                 // to the parent table is equal to the parent table primary key value we're currently looking at.
                 // For example, if parentPK is 2, get records from pet_owners__user_pets where `user_pets` == 2.
-                var junctionTableRecordsForThisParent = _.filter(junctionTableResults, function(record) {
+                var junctionTableRecordsForThisParent = _.filter(junctionTableResults, function (record) {
                   return record[firstJoin.childKey] === parentPk;
                 });
 
@@ -360,12 +360,12 @@ module.exports = function helpFind(WLModel, s2q, omen, done) {
                 // Create an `in` constraint that looks for just those primary key values,
                 // then push it on to the child table query as a conjunct.
                 var childInConjunct = {};
-                childInConjunct[secondJoin.childKey] = {in: childPks};
+                childInConjunct[secondJoin.childKey] = { in: childPks };
                 childTableQuery.criteria.where.and.push(childInConjunct);
 
                 // We now have another valid "stage 3" query, so let's run that and get the child table results.
                 // Finally, run the query on the adapter.
-                childTableAdapter.find(childTableDatastoreName, childTableQuery, function(err, childTableResults) {
+                childTableAdapter.find(childTableDatastoreName, childTableQuery, function (err, childTableResults) {
                   if (err) {
                     // Note that we're careful to use the identity, not the table name!
                     err = forgeAdapterError(err, omen, 'find', childTableModel.identity, orm);
@@ -388,7 +388,7 @@ module.exports = function helpFind(WLModel, s2q, omen, done) {
                 var parentKey = firstJoin.parentKey;
 
                 // Loop through the current populated parent records.
-                _.each(populatedParentRecords, function(parentRecord) {
+                _.each(populatedParentRecords, function (parentRecord) {
 
                   // Get the current parent record's primary key value.
                   var parentPk = parentRecord[parentKey];
@@ -432,7 +432,7 @@ module.exports = function helpFind(WLModel, s2q, omen, done) {
 
             // Start a base query object for the child table.  We'll use a copy of this with modifiec
             // "in" criteria for each query to the child table (one per unique parent ID in the join results).
-            var baseChildTableQuery = {
+            var baseChildTableQuery: any = {
               using: singleJoin.child,
               method: 'find',
               criteria: {
@@ -469,7 +469,7 @@ module.exports = function helpFind(WLModel, s2q, omen, done) {
             if (!_.isUndefined(singleJoin.criteria.limit)) {
               baseChildTableQuery.criteria.limit = singleJoin.criteria.limit;
             } else {
-              baseChildTableQuery.criteria.limit = Number.MAX_SAFE_INTEGER||9007199254740991;
+              baseChildTableQuery.criteria.limit = Number.MAX_SAFE_INTEGER || 9007199254740991;
             }
 
             // If the user added a sort, add it to our criteria.
@@ -477,10 +477,10 @@ module.exports = function helpFind(WLModel, s2q, omen, done) {
             if (!_.isUndefined(singleJoin.criteria.sort)) {
               baseChildTableQuery.criteria.sort = singleJoin.criteria.sort;
             } else {
-              baseChildTableQuery.criteria.sort = (function() {
+              baseChildTableQuery.criteria.sort = (function () {
                 var comparatorDirective = {};
                 comparatorDirective[childTableModel.primaryKey] = 'ASC';
-                return [ comparatorDirective ];
+                return [comparatorDirective];
               })();
             }
 
@@ -492,7 +492,7 @@ module.exports = function helpFind(WLModel, s2q, omen, done) {
 
             // Loop over those parent primary keys and do one query to the child table per parent,
             // collecting the results in a dictionary organized by parent PK.
-            async.map(populatedParentRecords, function(parentRecord, nextParentRecord) {
+            async.map(populatedParentRecords, function (parentRecord, nextParentRecord) {
 
               // Start with a copy of the base query.
               var childTableQuery = _.cloneDeep(baseChildTableQuery);
@@ -504,7 +504,7 @@ module.exports = function helpFind(WLModel, s2q, omen, done) {
               childTableQuery.criteria.where.and.push(pkConjunct);
 
               // We now have another valid "stage 3" query, so let's run that and get the child table results.
-              childTableAdapter.find(childTableDatastoreName, childTableQuery, function(err, childTableResults) {
+              childTableAdapter.find(childTableDatastoreName, childTableQuery, function (err, childTableResults) {
                 if (err) {
                   err = forgeAdapterError(err, omen, 'find', childTableModel.identity, orm);
                   return nextParentRecord(err);
@@ -527,7 +527,7 @@ module.exports = function helpFind(WLModel, s2q, omen, done) {
 
               }); // </childTableAdapter.find(...)>
 
-            }, function _afterAsyncMap(err, result){
+            }, function _afterAsyncMap(err, result) {
               if (err) { return nextSetOfJoins(err); }
               return nextSetOfJoins(undefined, result);
             });//</ async.map>
@@ -548,7 +548,7 @@ module.exports = function helpFind(WLModel, s2q, omen, done) {
 
     } // </ else do joins with shim>
 
-  }) (function _afterGettingPopulatedPhysicalRecords (err, populatedRecords){
+  })(function _afterGettingPopulatedPhysicalRecords(err, populatedRecords) {
 
     if (err) { return done(err); }
 
@@ -564,7 +564,7 @@ module.exports = function helpFind(WLModel, s2q, omen, done) {
     // mutating them inline.
 
     // First, perform the transformation at the top level.
-    populatedRecords = _.map(populatedRecords, function(populatedPhysicalRecord) {
+    populatedRecords = _.map(populatedRecords, function (populatedPhysicalRecord) {
       return WLModel._transformer.unserialize(populatedPhysicalRecord);
     });
 
@@ -594,8 +594,8 @@ module.exports = function helpFind(WLModel, s2q, omen, done) {
 
     // Process each record and look to see if there is anything to transform
     // Look at each key in the object and see if it was used in a join
-    _.each(populatedRecords, function(record) {
-      _.each(_.keys(record), function(key) {
+    _.each(populatedRecords, function (record) {
+      _.each(_.keys(record), function (key) {
         var attr = WLModel.schema[key];
 
         // Skip unrecognized attributes.
@@ -613,7 +613,7 @@ module.exports = function helpFind(WLModel, s2q, omen, done) {
 
         // Ascertain whether this attribute refers to a populate collection, and if so,
         // get the identity of the child model in the join.
-        var joinModelIdentity = (function() {
+        var joinModelIdentity = (function () {
 
           // Find the joins (if any) in this query that refer to the current attribute.
           var joinsUsingThisAlias = _.where(joins, { alias: key });
@@ -656,7 +656,7 @@ module.exports = function helpFind(WLModel, s2q, omen, done) {
         if (!_.isArray(record[key])) {
 
           if (!_.isNull(record[key]) && !_.isObject(record[key])) {
-            throw new Error('Consistency violation: IWMIH, `record[\''+'\']` should always be either `null` (if populating failed) or a dictionary (if it worked).  But instead, got: '+util.inspect(record[key], {depth: 5})+'');
+            throw new Error('Consistency violation: IWMIH, `record[\'' + '\']` should always be either `null` (if populating failed) or a dictionary (if it worked).  But instead, got: ' + util.inspect(record[key], { depth: 5 }) + '');
           }
 
           record[key] = WLChildModel._transformer.unserialize(record[key]);
@@ -667,7 +667,7 @@ module.exports = function helpFind(WLModel, s2q, omen, done) {
         // Otherwise the attribute is an array (presumably of populated child records).
         // (We'll transform each and every one.)
         var transformedChildRecords = [];
-        _.each(record[key], function(originalChildRecord) {
+        _.each(record[key], function (originalChildRecord) {
 
           // Transform the child record.
           var transformedChildRecord;
